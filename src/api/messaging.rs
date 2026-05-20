@@ -36,6 +36,7 @@ pub(super) struct MessagingStatusResponse {
     twitch: PlatformStatus,
     mattermost: PlatformStatus,
     signal: PlatformStatus,
+    photon: PlatformStatus,
     instances: Vec<AdapterInstanceStatus>,
 }
 
@@ -112,6 +113,17 @@ pub(super) struct InstanceCredentials {
     signal_account: Option<String>,
     #[serde(default)]
     signal_dm_allowed_users: Option<String>,
+    // Photon credentials
+    #[serde(default)]
+    photon_project_id: Option<String>,
+    #[serde(default)]
+    photon_project_secret: Option<String>,
+    #[serde(default)]
+    photon_sidecar_command: Option<String>,
+    #[serde(default)]
+    photon_sidecar_working_dir: Option<String>,
+    #[serde(default)]
+    photon_dm_allowed_users: Option<String>,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -348,6 +360,18 @@ fn parse_signal_credentials(
     Ok((http_url, account.to_string(), dm_users))
 }
 
+fn parse_photon_dm_allow_list(raw: Option<&String>) -> Vec<String> {
+    raw.map(|value| {
+        value
+            .split(',')
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>()
+    })
+    .unwrap_or_default()
+}
+
 /// Get which messaging platforms are configured and enabled.
 #[utoipa::path(
     get,
@@ -363,7 +387,7 @@ pub(super) async fn messaging_status(
 ) -> Result<Json<MessagingStatusResponse>, StatusCode> {
     let config_path = state.config_path.read().await.clone();
 
-    let (discord, slack, telegram, email, webhook, twitch, mattermost, signal, instances) =
+    let (discord, slack, telegram, email, webhook, twitch, mattermost, signal, photon, instances) =
         if config_path.exists() {
             let content = tokio::fs::read_to_string(&config_path)
                 .await
@@ -870,6 +894,81 @@ pub(super) async fn messaging_status(
                     enabled: false,
                 });
 
+            let photon_status = doc
+                .get("messaging")
+                .and_then(|m| m.get("photon"))
+                .map(|photon| {
+                    let has_project_id = photon
+                        .get("project_id")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty());
+                    let has_project_secret = photon
+                        .get("project_secret")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty());
+                    let enabled = photon
+                        .get("enabled")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+
+                    if has_project_id && has_project_secret {
+                        push_instance_status(
+                            &mut instances,
+                            bindings,
+                            "photon",
+                            None,
+                            true,
+                            enabled,
+                        );
+                    }
+
+                    if let Some(named_instances) = photon
+                        .get("instances")
+                        .and_then(|value| value.as_array_of_tables())
+                    {
+                        for instance in named_instances {
+                            let instance_name = normalize_adapter_selector(
+                                instance.get("name").and_then(|value| value.as_str()),
+                            );
+                            let instance_enabled = instance
+                                .get("enabled")
+                                .and_then(|value| value.as_bool())
+                                .unwrap_or(true)
+                                && enabled;
+                            let instance_configured = instance
+                                .get("project_id")
+                                .and_then(|value| value.as_str())
+                                .is_some_and(|value| !value.is_empty())
+                                && instance
+                                    .get("project_secret")
+                                    .and_then(|value| value.as_str())
+                                    .is_some_and(|value| !value.is_empty());
+
+                            if let Some(instance_name) = instance_name
+                                && instance_configured
+                            {
+                                push_instance_status(
+                                    &mut instances,
+                                    bindings,
+                                    "photon",
+                                    Some(instance_name),
+                                    true,
+                                    instance_enabled,
+                                );
+                            }
+                        }
+                    }
+
+                    PlatformStatus {
+                        configured: has_project_id && has_project_secret,
+                        enabled: has_project_id && has_project_secret && enabled,
+                    }
+                })
+                .unwrap_or(PlatformStatus {
+                    configured: false,
+                    enabled: false,
+                });
+
             (
                 discord_status,
                 slack_status,
@@ -879,6 +978,7 @@ pub(super) async fn messaging_status(
                 twitch_status,
                 mattermost_status,
                 signal_status,
+                photon_status,
                 instances,
             )
         } else {
@@ -887,6 +987,7 @@ pub(super) async fn messaging_status(
                 enabled: false,
             };
             (
+                default.clone(),
                 default.clone(),
                 default.clone(),
                 default.clone(),
@@ -908,6 +1009,7 @@ pub(super) async fn messaging_status(
         twitch,
         mattermost,
         signal,
+        photon,
         instances,
     }))
 }
@@ -1559,6 +1661,60 @@ pub(super) async fn toggle_platform(
                         }
                     }
                 }
+                "photon" => {
+                    if let Some(photon_config) = &new_config.messaging.photon {
+                        match request.adapter.as_ref() {
+                            None => {
+                                if photon_config.enabled
+                                    && !photon_config.project_id.is_empty()
+                                    && !photon_config.project_secret.is_empty()
+                                {
+                                    let adapter = crate::messaging::photon::PhotonAdapter::new(
+                                        "photon",
+                                        photon_config.project_id.clone(),
+                                        photon_config.project_secret.clone(),
+                                        photon_config.sidecar_command.clone(),
+                                        photon_config
+                                            .sidecar_working_dir
+                                            .clone()
+                                            .map(std::path::PathBuf::from),
+                                        photon_config.dm_allowed_users.clone(),
+                                    );
+                                    if let Err(error) = manager.register_and_start(adapter).await {
+                                        tracing::error!(%error, "failed to start photon adapter on toggle");
+                                    }
+                                }
+                            }
+                            Some(adapter_name) => {
+                                let adapter_key = adapter_name.trim();
+                                if let Some(instance) =
+                                    photon_config.instances.iter().find(|instance| {
+                                        instance.name == adapter_key && instance.enabled
+                                    })
+                                {
+                                    let runtime_key = crate::config::binding_runtime_adapter_key(
+                                        "photon",
+                                        Some(instance.name.as_str()),
+                                    );
+                                    let adapter = crate::messaging::photon::PhotonAdapter::new(
+                                        runtime_key,
+                                        instance.project_id.clone(),
+                                        instance.project_secret.clone(),
+                                        instance.sidecar_command.clone(),
+                                        instance
+                                            .sidecar_working_dir
+                                            .clone()
+                                            .map(std::path::PathBuf::from),
+                                        instance.dm_allowed_users.clone(),
+                                    );
+                                    if let Err(error) = manager.register_and_start(adapter).await {
+                                        tracing::error!(%error, adapter = %instance.name, "failed to start named photon adapter on toggle");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -1627,7 +1783,15 @@ pub(super) async fn create_messaging_instance(
 
     if !matches!(
         platform.as_str(),
-        "discord" | "slack" | "telegram" | "twitch" | "email" | "webhook" | "mattermost" | "signal"
+        "discord"
+            | "slack"
+            | "telegram"
+            | "twitch"
+            | "email"
+            | "webhook"
+            | "mattermost"
+            | "signal"
+            | "photon"
     ) {
         return Ok(Json(MessagingInstanceActionResponse {
             success: false,
@@ -1841,6 +2005,45 @@ pub(super) async fn create_messaging_instance(
                         }
                     }
                 }
+                "photon" => {
+                    if let Some(project_id) = &credentials.photon_project_id {
+                        platform_table["project_id"] = toml_edit::value(project_id.as_str());
+                    }
+                    if let Some(project_secret) = &credentials.photon_project_secret {
+                        platform_table["project_secret"] =
+                            toml_edit::value(project_secret.as_str());
+                    }
+                    if let Some(sidecar_command) = &credentials.photon_sidecar_command {
+                        if sidecar_command.trim().is_empty() {
+                            platform_table.remove("sidecar_command");
+                        } else {
+                            platform_table["sidecar_command"] =
+                                toml_edit::value(sidecar_command.as_str());
+                        }
+                    }
+                    if let Some(sidecar_working_dir) = &credentials.photon_sidecar_working_dir {
+                        if sidecar_working_dir.trim().is_empty() {
+                            platform_table.remove("sidecar_working_dir");
+                        } else {
+                            platform_table["sidecar_working_dir"] =
+                                toml_edit::value(sidecar_working_dir.as_str());
+                        }
+                    }
+                    if credentials.photon_dm_allowed_users.is_some() {
+                        let dm_allowed_users = parse_photon_dm_allow_list(
+                            credentials.photon_dm_allowed_users.as_ref(),
+                        );
+                        if dm_allowed_users.is_empty() {
+                            platform_table.remove("dm_allowed_users");
+                        } else {
+                            let mut dm_array = toml_edit::Array::new();
+                            for user in dm_allowed_users {
+                                dm_array.push(user);
+                            }
+                            platform_table["dm_allowed_users"] = toml_edit::value(dm_array);
+                        }
+                    }
+                }
                 _ => {}
             }
             if let Some(value) = request.enabled {
@@ -2005,6 +2208,36 @@ pub(super) async fn create_messaging_instance(
                         }
                     }
                 }
+                "photon" => {
+                    if let Some(project_id) = &credentials.photon_project_id {
+                        instance_table["project_id"] = toml_edit::value(project_id.as_str());
+                    }
+                    if let Some(project_secret) = &credentials.photon_project_secret {
+                        instance_table["project_secret"] =
+                            toml_edit::value(project_secret.as_str());
+                    }
+                    if let Some(sidecar_command) = &credentials.photon_sidecar_command
+                        && !sidecar_command.trim().is_empty()
+                    {
+                        instance_table["sidecar_command"] =
+                            toml_edit::value(sidecar_command.as_str());
+                    }
+                    if let Some(sidecar_working_dir) = &credentials.photon_sidecar_working_dir
+                        && !sidecar_working_dir.trim().is_empty()
+                    {
+                        instance_table["sidecar_working_dir"] =
+                            toml_edit::value(sidecar_working_dir.as_str());
+                    }
+                    let dm_allowed_users =
+                        parse_photon_dm_allow_list(credentials.photon_dm_allowed_users.as_ref());
+                    if !dm_allowed_users.is_empty() {
+                        let mut dm_array = toml_edit::Array::new();
+                        for user in dm_allowed_users {
+                            dm_array.push(user);
+                        }
+                        instance_table["dm_allowed_users"] = toml_edit::value(dm_array);
+                    }
+                }
                 _ => {}
             }
 
@@ -2080,7 +2313,15 @@ pub(super) async fn delete_messaging_instance(
 
     if !matches!(
         platform.as_str(),
-        "discord" | "slack" | "telegram" | "twitch" | "email" | "webhook" | "mattermost" | "signal"
+        "discord"
+            | "slack"
+            | "telegram"
+            | "twitch"
+            | "email"
+            | "webhook"
+            | "mattermost"
+            | "signal"
+            | "photon"
     ) {
         return Ok(Json(MessagingInstanceActionResponse {
             success: false,
@@ -2191,6 +2432,13 @@ pub(super) async fn delete_messaging_instance(
                     table.remove("group_ids");
                     table.remove("group_allowed_users");
                     table.remove("ignore_stories");
+                }
+                "photon" => {
+                    table.remove("project_id");
+                    table.remove("project_secret");
+                    table.remove("sidecar_command");
+                    table.remove("sidecar_working_dir");
+                    table.remove("dm_allowed_users");
                 }
                 _ => {}
             }

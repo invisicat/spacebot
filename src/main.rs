@@ -3626,6 +3626,53 @@ async fn initialize_agents(
         }
     }
 
+    if let Some(photon_config) = &config.messaging.photon
+        && photon_config.enabled
+    {
+        if !photon_config.project_id.is_empty() && !photon_config.project_secret.is_empty() {
+            let adapter = spacebot::messaging::photon::PhotonAdapter::new(
+                "photon",
+                photon_config.project_id.clone(),
+                photon_config.project_secret.clone(),
+                photon_config.sidecar_command.clone(),
+                photon_config
+                    .sidecar_working_dir
+                    .clone()
+                    .map(std::path::PathBuf::from),
+                photon_config.dm_allowed_users.clone(),
+            );
+            new_messaging_manager.register(adapter).await;
+        }
+
+        for instance in photon_config
+            .instances
+            .iter()
+            .filter(|instance| instance.enabled)
+        {
+            if instance.project_id.is_empty() || instance.project_secret.is_empty() {
+                tracing::warn!(adapter = %instance.name, "skipping enabled photon instance with missing credentials");
+                continue;
+            }
+
+            let runtime_key = spacebot::config::binding_runtime_adapter_key(
+                "photon",
+                Some(instance.name.as_str()),
+            );
+            let adapter = spacebot::messaging::photon::PhotonAdapter::new(
+                runtime_key,
+                instance.project_id.clone(),
+                instance.project_secret.clone(),
+                instance.sidecar_command.clone(),
+                instance
+                    .sidecar_working_dir
+                    .clone()
+                    .map(std::path::PathBuf::from),
+                instance.dm_allowed_users.clone(),
+            );
+            new_messaging_manager.register(adapter).await;
+        }
+    }
+
     let portal_agent_pools = agents
         .iter()
         .map(|(agent_id, agent)| (agent_id.to_string(), agent.db.sqlite.clone()))
