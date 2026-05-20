@@ -15,7 +15,14 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Image MIME types we support for vision.
-const IMAGE_MIME_PREFIXES: &[&str] = &["image/jpeg", "image/png", "image/gif", "image/webp"];
+const IMAGE_MIME_PREFIXES: &[&str] = &[
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+];
 
 /// Text-based MIME types where we inline the content.
 const TEXT_MIME_PREFIXES: &[&str] = &[
@@ -70,6 +77,24 @@ pub(crate) async fn download_attachments(
     parts
 }
 
+/// Decode `data:mime/type;base64,...` payloads produced by adapters (e.g. Photon)
+/// that ship attachment bytes on the wire instead of an HTTP URL.
+fn bytes_from_data_url(data_url: &str) -> std::result::Result<Vec<u8>, String> {
+    let rest = data_url
+        .strip_prefix("data:")
+        .ok_or_else(|| "not a data URL".to_string())?;
+    let (descriptor, encoded) = rest
+        .split_once(',')
+        .ok_or_else(|| "malformed data URL".to_string())?;
+    if !(descriptor.ends_with(";base64") || descriptor.contains(";base64;")) {
+        return Err("only base64 data URLs are supported".to_string());
+    }
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim())
+        .map_err(|error| error.to_string())
+}
+
 /// Download raw bytes from an attachment URL, including auth if present.
 ///
 /// When `auth_header` is set (Slack), uses a no-redirect client and manually
@@ -79,6 +104,9 @@ async fn download_attachment_bytes(
     http: &reqwest::Client,
     attachment: &crate::Attachment,
 ) -> std::result::Result<Vec<u8>, String> {
+    if attachment.url.starts_with("data:") {
+        return bytes_from_data_url(&attachment.url);
+    }
     if attachment.auth_header.is_some() {
         download_attachment_bytes_with_auth(attachment).await
     } else {
@@ -940,4 +968,15 @@ pub async fn persist_attachment_bytes(
         mime_type: mime_type.to_string(),
         size_bytes,
     })
+}
+
+#[cfg(test)]
+#[test]
+fn data_url_decode_round_trip() {
+    use base64::Engine as _;
+    let raw = b"hello-bytes";
+    let b64 = base64::engine::general_purpose::STANDARD.encode(raw);
+    let url = format!("data:text/plain;base64,{b64}");
+    let decoded = bytes_from_data_url(&url).expect("decode");
+    assert_eq!(decoded, raw);
 }

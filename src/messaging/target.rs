@@ -31,7 +31,11 @@ pub fn parse_delivery_target(raw: &str) -> Option<BroadcastTarget> {
 
     // Handle other platforms with named instances (telegram, discord, slack)
     // Format: platform:<instance>:<target> or platform:<target>
-    if raw.starts_with("telegram:") || raw.starts_with("discord:") || raw.starts_with("slack:") {
+    if raw.starts_with("telegram:")
+        || raw.starts_with("discord:")
+        || raw.starts_with("slack:")
+        || raw.starts_with("photon:")
+    {
         let parts: Vec<&str> = raw.split(':').collect();
         return parse_named_instance_target(&parts);
     }
@@ -185,6 +189,26 @@ pub fn resolve_broadcast_target(channel: &ChannelInfo) -> Option<BroadcastTarget
             let target = normalize_mattermost_target(&raw_target)?;
             return Some(BroadcastTarget { adapter, target });
         }
+        "photon" => {
+            let adapter = extract_photon_adapter_from_channel_id(&channel.id);
+            let raw_target = if let Some(space_id) = channel
+                .platform_meta
+                .as_ref()
+                .and_then(|meta| meta.get("photon_space_id"))
+                .and_then(json_value_to_string)
+            {
+                space_id
+            } else {
+                let parts: Vec<&str> = channel.id.split(':').collect();
+                match parts.as_slice() {
+                    [_, space_id] => (*space_id).to_string(),
+                    [_, _, rest @ ..] if !rest.is_empty() => rest.join(":"),
+                    _ => return None,
+                }
+            };
+            let target = normalize_target("photon", &raw_target)?;
+            return Some(BroadcastTarget { adapter, target });
+        }
         _ => return None,
     };
 
@@ -305,6 +329,21 @@ fn extract_mattermost_adapter_from_channel_id(channel_id: &str) -> String {
         // Named channel: mattermost:{instance}:{team_id}:{channel_id}
         ["mattermost", instance, _, _] => format!("mattermost:{instance}"),
         _ => "mattermost".to_string(),
+    }
+}
+
+fn extract_photon_adapter_from_channel_id(channel_id: &str) -> String {
+    let parts: Vec<&str> = channel_id.split(':').collect();
+    match parts.as_slice() {
+        ["photon", instance, _rest @ ..]
+            if parts.len() >= 3
+                && !instance.is_empty()
+                && is_valid_instance_name(instance)
+                && !instance.eq_ignore_ascii_case("photon") =>
+        {
+            format!("photon:{instance}")
+        }
+        _ => "photon".to_string(),
     }
 }
 
@@ -595,8 +634,9 @@ fn parse_named_instance_target(parts: &[&str]) -> Option<BroadcastTarget> {
     let is_telegram = platform == "telegram";
     let is_discord = platform == "discord";
     let is_slack = platform == "slack";
+    let is_photon = platform == "photon";
 
-    if !is_telegram && !is_discord && !is_slack {
+    if !is_telegram && !is_discord && !is_slack && !is_photon {
         return None;
     }
 
@@ -1037,6 +1077,43 @@ mod tests {
             Some(super::BroadcastTarget {
                 adapter: "telegram".to_string(),
                 target: "12345".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn parse_named_instance_target_photon_named() {
+        let parsed = super::parse_named_instance_target(&["photon", "support", "space-123"]);
+        assert_eq!(
+            parsed,
+            Some(super::BroadcastTarget {
+                adapter: "photon:support".to_string(),
+                target: "space-123".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn parse_named_instance_target_photon_default() {
+        let parsed = super::parse_named_instance_target(&["photon", "space-123"]);
+        assert_eq!(
+            parsed,
+            Some(super::BroadcastTarget {
+                adapter: "photon".to_string(),
+                target: "space-123".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn resolve_photon_target_from_named_channel_id() {
+        let channel = test_channel_info("photon:support:space-123", "photon");
+        let resolved = resolve_broadcast_target(&channel);
+        assert_eq!(
+            resolved,
+            Some(super::BroadcastTarget {
+                adapter: "photon:support".to_string(),
+                target: "space-123".to_string(),
             })
         );
     }

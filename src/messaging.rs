@@ -4,6 +4,7 @@ pub mod discord;
 pub mod email;
 pub mod manager;
 pub mod mattermost;
+pub mod photon;
 pub mod portal;
 pub mod signal;
 pub mod slack;

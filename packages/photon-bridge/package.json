@@ -1,0 +1,12 @@
+{
+  "name": "@spacebot/photon-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "spectrum-ts": "1.8.0"
+  }
+}
