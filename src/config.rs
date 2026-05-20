@@ -1636,6 +1636,7 @@ id = "main"
             webhook: None,
             twitch: None,
             signal: None,
+            photon: None,
             mattermost: None,
         };
         let bindings = vec![
@@ -1686,6 +1687,7 @@ id = "main"
             webhook: None,
             twitch: None,
             signal: None,
+            photon: None,
             mattermost: None,
         };
         let bindings = vec![Binding {
@@ -1754,6 +1756,7 @@ id = "main"
             webhook: None,
             twitch: None,
             signal: None,
+            photon: None,
             mattermost: None,
         };
         let bindings = vec![Binding {
@@ -1797,6 +1800,7 @@ id = "main"
             webhook: None,
             twitch: None,
             signal: None,
+            photon: None,
             mattermost: None,
         };
         // Binding targets default adapter, but no default credentials exist
@@ -1841,6 +1845,7 @@ id = "main"
             webhook: None,
             twitch: None,
             signal: None,
+            photon: None,
             mattermost: None,
         };
         let bindings = vec![
@@ -1922,6 +1927,7 @@ id = "main"
             webhook: None,
             twitch: None,
             signal: None,
+            photon: None,
             mattermost: None,
         };
         let bindings = vec![Binding {
@@ -1955,6 +1961,7 @@ id = "main"
             webhook: None,
             twitch: None,
             signal: None,
+            photon: None,
             mattermost: None,
         };
         let bindings = vec![Binding {
@@ -1997,6 +2004,7 @@ id = "main"
             webhook: None,
             twitch: None,
             signal: None,
+            photon: None,
             mattermost: None,
         };
         let bindings = vec![Binding {
@@ -2035,6 +2043,7 @@ id = "main"
             webhook: None,
             twitch: None,
             signal: None,
+            photon: None,
             mattermost: None,
         };
         let bindings = vec![Binding {

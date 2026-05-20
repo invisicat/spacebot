@@ -1412,8 +1412,8 @@ pub trait SystemSecrets {
 /// here.
 pub fn system_secret_registry() -> Vec<&'static SecretField> {
     use crate::config::{
-        DefaultsConfig, DiscordConfig, EmailConfig, LlmConfig, MattermostConfig, SignalConfig,
-        SlackConfig, TelegramConfig, TwitchConfig,
+        DefaultsConfig, DiscordConfig, EmailConfig, LlmConfig, MattermostConfig, PhotonConfig,
+        SignalConfig, SlackConfig, TelegramConfig, TwitchConfig,
     };
 
     let mut fields = Vec::new();
@@ -1428,6 +1428,7 @@ pub fn system_secret_registry() -> Vec<&'static SecretField> {
     fields.extend(TwitchConfig::secret_fields());
     fields.extend(EmailConfig::secret_fields());
     fields.extend(SignalConfig::secret_fields());
+    fields.extend(PhotonConfig::secret_fields());
     fields.extend(MattermostConfig::secret_fields());
     fields
 }

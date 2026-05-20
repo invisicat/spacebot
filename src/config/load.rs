@@ -16,10 +16,10 @@ use super::{
     DiscordInstanceConfig, EmailConfig, EmailInstanceConfig, GroupDef, HumanDef, IngestionConfig,
     LinkDef, LlmConfig, MattermostConfig, MattermostInstanceConfig, McpServerConfig, McpTransport,
     MemoryJanitorConfig, MemoryPersistenceConfig, MessagingConfig, MetricsConfig, OpenCodeConfig,
-    ParticipantContextConfig, ProjectsConfig, ProviderConfig, SignalConfig, SignalInstanceConfig,
-    SlackCommandConfig, SlackConfig, SlackInstanceConfig, TelegramConfig, TelegramInstanceConfig,
-    TelemetryConfig, TwitchConfig, TwitchInstanceConfig, WarmupConfig, WebhookConfig,
-    normalize_adapter, validate_named_messaging_adapters,
+    ParticipantContextConfig, PhotonConfig, PhotonInstanceConfig, ProjectsConfig, ProviderConfig,
+    SignalConfig, SignalInstanceConfig, SlackCommandConfig, SlackConfig, SlackInstanceConfig,
+    TelegramConfig, TelegramInstanceConfig, TelemetryConfig, TwitchConfig, TwitchInstanceConfig,
+    WarmupConfig, WebhookConfig, normalize_adapter, validate_named_messaging_adapters,
 };
 use crate::error::{ConfigError, Result};
 
@@ -2414,6 +2414,64 @@ impl Config {
                     group_ids: s.group_ids,
                     group_allowed_users: s.group_allowed_users,
                     ignore_stories: s.ignore_stories,
+                })
+            }),
+            photon: toml.messaging.photon.and_then(|p| {
+                let instances = p
+                    .instances
+                    .into_iter()
+                    .map(|instance| {
+                        let project_id = instance.project_id.as_deref().and_then(resolve_env_value);
+                        let project_secret =
+                            instance.project_secret.as_deref().and_then(resolve_env_value);
+                        let has_credentials = project_id.is_some() && project_secret.is_some();
+                        if instance.enabled && !has_credentials {
+                            tracing::warn!(
+                                adapter = %instance.name,
+                                "photon instance is enabled but project credentials are missing/unresolvable — disabling"
+                            );
+                        }
+                        PhotonInstanceConfig {
+                            name: instance.name,
+                            enabled: instance.enabled && has_credentials,
+                            project_id: project_id.unwrap_or_default(),
+                            project_secret: project_secret.unwrap_or_default(),
+                            sidecar_command: instance
+                                .sidecar_command
+                                .as_deref()
+                                .and_then(resolve_env_value),
+                            sidecar_working_dir: instance
+                                .sidecar_working_dir
+                                .as_deref()
+                                .and_then(resolve_env_value),
+                            dm_allowed_users: instance.dm_allowed_users,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                let project_id = std::env::var("PHOTON_PROJECT_ID")
+                    .ok()
+                    .or_else(|| p.project_id.as_deref().and_then(resolve_env_value));
+                let project_secret = std::env::var("PHOTON_PROJECT_SECRET")
+                    .ok()
+                    .or_else(|| p.project_secret.as_deref().and_then(resolve_env_value));
+                let has_default = project_id.is_some() && project_secret.is_some();
+
+                if !has_default && instances.is_empty() {
+                    return None;
+                }
+
+                Some(PhotonConfig {
+                    enabled: p.enabled,
+                    project_id: project_id.unwrap_or_default(),
+                    project_secret: project_secret.unwrap_or_default(),
+                    sidecar_command: p.sidecar_command.as_deref().and_then(resolve_env_value),
+                    sidecar_working_dir: p
+                        .sidecar_working_dir
+                        .as_deref()
+                        .and_then(resolve_env_value),
+                    dm_allowed_users: p.dm_allowed_users,
+                    instances,
                 })
             }),
             mattermost: toml.messaging.mattermost.and_then(|mm| {

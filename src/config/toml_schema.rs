@@ -532,6 +532,7 @@ pub(super) struct TomlMessagingConfig {
     pub(super) webhook: Option<TomlWebhookConfig>,
     pub(super) twitch: Option<TomlTwitchConfig>,
     pub(super) signal: Option<TomlSignalConfig>,
+    pub(super) photon: Option<TomlPhotonConfig>,
     #[serde(default)]
     pub(super) mattermost: Option<TomlMattermostConfig>,
 }
@@ -758,6 +759,33 @@ pub(super) struct TomlSignalInstanceConfig {
     pub(super) group_allowed_users: Vec<String>,
     #[serde(default = "default_signal_ignore_stories")]
     pub(super) ignore_stories: bool,
+}
+
+#[derive(Deserialize)]
+pub(super) struct TomlPhotonConfig {
+    #[serde(default)]
+    pub(super) enabled: bool,
+    pub(super) project_id: Option<String>,
+    pub(super) project_secret: Option<String>,
+    pub(super) sidecar_command: Option<String>,
+    pub(super) sidecar_working_dir: Option<String>,
+    #[serde(default)]
+    pub(super) dm_allowed_users: Vec<String>,
+    #[serde(default)]
+    pub(super) instances: Vec<TomlPhotonInstanceConfig>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct TomlPhotonInstanceConfig {
+    pub(super) name: String,
+    #[serde(default)]
+    pub(super) enabled: bool,
+    pub(super) project_id: Option<String>,
+    pub(super) project_secret: Option<String>,
+    pub(super) sidecar_command: Option<String>,
+    pub(super) sidecar_working_dir: Option<String>,
+    #[serde(default)]
+    pub(super) dm_allowed_users: Vec<String>,
 }
 
 pub(super) fn default_signal_ignore_stories() -> bool {

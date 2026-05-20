@@ -1851,10 +1851,14 @@ impl Binding {
                 .get("twitch_channel")
                 .and_then(|v| v.as_str());
 
-            // Also check Mattermost channel ID
+            // Also check Mattermost and Photon channel IDs
             let mattermost_channel = message
                 .metadata
                 .get("mattermost_channel_id")
+                .and_then(|v| v.as_str());
+            let photon_space = message
+                .metadata
+                .get("photon_space_id")
                 .and_then(|v| v.as_str());
 
             let direct_match = message_channel
@@ -1862,7 +1866,8 @@ impl Binding {
                 .is_some_and(|id| self.channel_ids.contains(id))
                 || slack_channel.is_some_and(|id| self.channel_ids.contains(&id.to_string()))
                 || twitch_channel.is_some_and(|id| self.channel_ids.contains(&id.to_string()))
-                || mattermost_channel.is_some_and(|id| self.channel_ids.contains(&id.to_string()));
+                || mattermost_channel.is_some_and(|id| self.channel_ids.contains(&id.to_string()))
+                || photon_space.is_some_and(|id| self.channel_ids.contains(&id.to_string()));
             let parent_match = parent_channel
                 .as_ref()
                 .is_some_and(|id| self.channel_ids.contains(id));
@@ -1873,12 +1878,20 @@ impl Binding {
         }
 
         if let Some(chat_id) = &self.chat_id {
-            let message_chat = message.metadata.get("telegram_chat_id").and_then(|value| {
-                value
-                    .as_str()
+            let message_chat = if self.channel == "photon" {
+                message
+                    .metadata
+                    .get("photon_space_id")
+                    .and_then(|value| value.as_str())
                     .map(std::borrow::ToOwned::to_owned)
-                    .or_else(|| value.as_i64().map(|id| id.to_string()))
-            });
+            } else {
+                message.metadata.get("telegram_chat_id").and_then(|value| {
+                    value
+                        .as_str()
+                        .map(std::borrow::ToOwned::to_owned)
+                        .or_else(|| value.as_i64().map(|id| id.to_string()))
+                })
+            };
             if message_chat.as_deref() != Some(chat_id.as_str()) {
                 return false;
             }
@@ -1925,6 +1938,11 @@ impl Binding {
                     .and_then(|v| v.as_str())
                     == Some("private")
             }
+            "photon" => message
+                .metadata
+                .get("photon_is_dm")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             _ => false,
         };
         if is_dm {
@@ -1939,6 +1957,7 @@ impl Binding {
             "twitch" => "twitch_mentions_or_replies_to_bot",
             "telegram" => "telegram_mentions_or_replies_to_bot",
             "mattermost" => "mattermost_mentions_or_replies_to_bot",
+            "photon" => "photon_mentions_or_replies_to_bot",
             // Unknown platforms: if require_mention is set, default to
             // requiring a mention (safe default).
             _ => return false,
@@ -1980,7 +1999,7 @@ pub(super) struct AdapterValidationState {
 pub(super) fn is_named_adapter_platform(platform: &str) -> bool {
     matches!(
         platform,
-        "discord" | "slack" | "telegram" | "twitch" | "email" | "signal" | "mattermost"
+        "discord" | "slack" | "telegram" | "twitch" | "email" | "signal" | "photon" | "mattermost"
     )
 }
 
@@ -2254,6 +2273,33 @@ pub(super) fn build_adapter_validation_states(
         );
     }
 
+    if let Some(photon) = &messaging.photon {
+        validate_instance_names(
+            "photon",
+            photon
+                .instances
+                .iter()
+                .map(|instance| instance.name.as_str()),
+        )?;
+        let named_instances: std::collections::HashSet<String> = photon
+            .instances
+            .iter()
+            .filter(|i| i.enabled)
+            .map(|i| i.name.clone())
+            .collect();
+        let default_present = photon.enabled
+            && !photon.project_id.trim().is_empty()
+            && !photon.project_secret.trim().is_empty();
+        validate_runtime_keys("photon", default_present, &named_instances)?;
+        states.insert(
+            "photon",
+            AdapterValidationState {
+                default_present,
+                named_instances,
+            },
+        );
+    }
+
     if let Some(mattermost) = &messaging.mattermost {
         let named_instances = validate_instance_names(
             "mattermost",
@@ -2472,6 +2518,7 @@ pub struct MessagingConfig {
     pub webhook: Option<WebhookConfig>,
     pub twitch: Option<TwitchConfig>,
     pub signal: Option<SignalConfig>,
+    pub photon: Option<PhotonConfig>,
     pub mattermost: Option<MattermostConfig>,
 }
 
@@ -3067,6 +3114,87 @@ impl SystemSecrets for SignalConfig {
 }
 
 #[derive(Clone)]
+pub struct PhotonConfig {
+    pub enabled: bool,
+    pub project_id: String,
+    pub project_secret: String,
+    pub sidecar_command: Option<String>,
+    pub sidecar_working_dir: Option<String>,
+    pub dm_allowed_users: Vec<String>,
+    pub instances: Vec<PhotonInstanceConfig>,
+}
+
+#[derive(Clone)]
+pub struct PhotonInstanceConfig {
+    pub name: String,
+    pub enabled: bool,
+    pub project_id: String,
+    pub project_secret: String,
+    pub sidecar_command: Option<String>,
+    pub sidecar_working_dir: Option<String>,
+    pub dm_allowed_users: Vec<String>,
+}
+
+impl std::fmt::Debug for PhotonConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PhotonConfig")
+            .field("enabled", &self.enabled)
+            .field("project_id", &"[REDACTED]")
+            .field("project_secret", &"[REDACTED]")
+            .field("sidecar_command", &self.sidecar_command)
+            .field("sidecar_working_dir", &self.sidecar_working_dir)
+            .field("dm_allowed_users", &"[REDACTED]")
+            .field("instances", &self.instances)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for PhotonInstanceConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PhotonInstanceConfig")
+            .field("name", &self.name)
+            .field("enabled", &self.enabled)
+            .field("project_id", &"[REDACTED]")
+            .field("project_secret", &"[REDACTED]")
+            .field("sidecar_command", &self.sidecar_command)
+            .field("sidecar_working_dir", &self.sidecar_working_dir)
+            .field("dm_allowed_users", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl SystemSecrets for PhotonConfig {
+    fn section() -> &'static str {
+        "photon"
+    }
+
+    fn is_messaging_adapter() -> bool {
+        true
+    }
+
+    fn secret_fields() -> &'static [SecretField] {
+        &[
+            SecretField {
+                toml_key: "project_id",
+                secret_name: "PHOTON_PROJECT_ID",
+                instance_pattern: Some(InstancePattern {
+                    platform_prefix: "PHOTON",
+                    field_suffix: "PROJECT_ID",
+                }),
+            },
+            SecretField {
+                toml_key: "project_secret",
+                secret_name: "PHOTON_PROJECT_SECRET",
+                instance_pattern: Some(InstancePattern {
+                    platform_prefix: "PHOTON",
+                    field_suffix: "PROJECT_SECRET",
+                }),
+            },
+        ]
+    }
+}
+
+#[derive(Clone)]
 pub struct MattermostConfig {
     pub enabled: bool,
     pub base_url: String,
@@ -3209,5 +3337,127 @@ mod mattermost_url_tests {
     #[test]
     fn rejects_fragment() {
         assert!(validate_mattermost_url("https://mattermost.example.com/#section").is_err());
+    }
+}
+
+#[cfg(test)]
+mod photon_binding_tests {
+    use super::{Binding, resolve_agent_for_message};
+    use crate::{InboundMessage, MessageContent};
+    use chrono::Utc;
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    fn photon_message(
+        sender_id: &str,
+        space_id: &str,
+        mentions_or_replies_to_bot: bool,
+        is_dm: bool,
+    ) -> InboundMessage {
+        let mut metadata = HashMap::new();
+        metadata.insert("photon_space_id".to_string(), json!(space_id));
+        metadata.insert(
+            "photon_mentions_or_replies_to_bot".to_string(),
+            json!(mentions_or_replies_to_bot),
+        );
+        metadata.insert("photon_is_dm".to_string(), json!(is_dm));
+
+        InboundMessage {
+            id: "msg-1".to_string(),
+            source: "photon".to_string(),
+            adapter: Some("photon".to_string()),
+            conversation_id: format!("photon:{space_id}"),
+            sender_id: sender_id.to_string(),
+            agent_id: None,
+            content: MessageContent::Text("hello".to_string()),
+            timestamp: Utc::now(),
+            metadata,
+            formatted_author: None,
+        }
+    }
+
+    #[test]
+    fn routes_photon_message_by_space_id_and_mention() {
+        let binding = Binding {
+            agent_id: "photon-agent".to_string(),
+            channel: "photon".to_string(),
+            adapter: None,
+            guild_id: None,
+            workspace_id: None,
+            chat_id: None,
+            team_id: None,
+            channel_ids: vec!["space-1".to_string()],
+            require_mention: true,
+            dm_allowed_users: Vec::new(),
+            settings: None,
+        };
+
+        let message = photon_message("user-1", "space-1", true, false);
+        let resolved = resolve_agent_for_message(&[binding], &message, "default-agent");
+
+        assert_eq!(
+            resolved.map(|(agent_id, _)| agent_id.to_string()),
+            Some("photon-agent".to_string())
+        );
+    }
+
+    #[test]
+    fn suppresses_photon_message_when_require_mention_not_met() {
+        let binding = Binding {
+            agent_id: "photon-agent".to_string(),
+            channel: "photon".to_string(),
+            adapter: None,
+            guild_id: None,
+            workspace_id: None,
+            chat_id: None,
+            team_id: None,
+            channel_ids: vec!["space-1".to_string()],
+            require_mention: true,
+            dm_allowed_users: Vec::new(),
+            settings: None,
+        };
+
+        let message = photon_message("user-1", "space-1", false, false);
+        let resolved = resolve_agent_for_message(&[binding], &message, "default-agent");
+
+        assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn routes_named_photon_bindings_by_adapter_selector() {
+        let binding = Binding {
+            agent_id: "photon-agent".to_string(),
+            channel: "photon".to_string(),
+            adapter: Some("support".to_string()),
+            guild_id: None,
+            workspace_id: None,
+            chat_id: None,
+            team_id: None,
+            channel_ids: vec!["space-1".to_string()],
+            require_mention: false,
+            dm_allowed_users: Vec::new(),
+            settings: None,
+        };
+
+        let mut matching_message = photon_message("user-1", "space-1", false, false);
+        matching_message.adapter = Some("photon:support".to_string());
+        matching_message.conversation_id = "photon:support:space-1".to_string();
+
+        let mut non_matching_message = photon_message("user-1", "space-1", false, false);
+        non_matching_message.adapter = Some("photon:other".to_string());
+        non_matching_message.conversation_id = "photon:other:space-1".to_string();
+
+        let matched =
+            resolve_agent_for_message(std::slice::from_ref(&binding), &matching_message, "default");
+        let fallback = resolve_agent_for_message(&[binding], &non_matching_message, "default");
+
+        assert_eq!(
+            matched.map(|(agent_id, _)| agent_id.to_string()),
+            Some("photon-agent".to_string())
+        );
+        assert_eq!(
+            fallback.map(|(agent_id, _)| agent_id.to_string()),
+            Some("default".to_string())
+        );
     }
 }

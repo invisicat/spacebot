@@ -620,6 +620,66 @@ pub fn spawn_file_watcher(
                             }
                         }
 
+                        if let Some(photon_config) = &config.messaging.photon
+                            && photon_config.enabled
+                        {
+                            if !photon_config.project_id.is_empty()
+                                && !photon_config.project_secret.is_empty()
+                                && !manager.has_adapter("photon").await
+                            {
+                                let adapter = crate::messaging::photon::PhotonAdapter::new(
+                                    "photon",
+                                    photon_config.project_id.clone(),
+                                    photon_config.project_secret.clone(),
+                                    photon_config.sidecar_command.clone(),
+                                    photon_config
+                                        .sidecar_working_dir
+                                        .clone()
+                                        .map(std::path::PathBuf::from),
+                                    photon_config.dm_allowed_users.clone(),
+                                );
+                                if let Err(error) = manager.register_and_start(adapter).await {
+                                    tracing::error!(
+                                        %error,
+                                        "failed to hot-start photon adapter from config change"
+                                    );
+                                }
+                            }
+
+                            for instance in
+                                photon_config.instances.iter().filter(|instance| instance.enabled)
+                            {
+                                let runtime_key = binding_runtime_adapter_key(
+                                    "photon",
+                                    Some(instance.name.as_str()),
+                                );
+                                if manager.has_adapter(runtime_key.as_str()).await {
+                                    continue;
+                                }
+
+                                if instance.project_id.is_empty() || instance.project_secret.is_empty()
+                                {
+                                    tracing::warn!(adapter = %instance.name, "skipping enabled photon instance with missing credentials");
+                                    continue;
+                                }
+
+                                let adapter = crate::messaging::photon::PhotonAdapter::new(
+                                    runtime_key,
+                                    instance.project_id.clone(),
+                                    instance.project_secret.clone(),
+                                    instance.sidecar_command.clone(),
+                                    instance
+                                        .sidecar_working_dir
+                                        .clone()
+                                        .map(std::path::PathBuf::from),
+                                    instance.dm_allowed_users.clone(),
+                                );
+                                if let Err(error) = manager.register_and_start(adapter).await {
+                                    tracing::error!(%error, adapter = %instance.name, "failed to hot-start named photon adapter from config change");
+                                }
+                            }
+                        }
+
                         // Mattermost: start default + named instances that are enabled and not already running.
                         if let Some(mattermost_config) = &config.messaging.mattermost
                             && mattermost_config.enabled {
