@@ -1,38 +1,51 @@
 name: Docker linux/amd64
 
+# Pushes to GitHub Container Registry — https://ghcr.io (not the legacy docker.pkg.github.com host).
 on:
   workflow_dispatch:
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE: ghcr.io/${{ github.repository_owner }}/spacebot
-
 permissions:
   contents: read
-  packages: write
 
 jobs:
   publish:
-    name: Build and publish (x86_64)
+    name: Build and publish to GHCR (x86_64)
     runs-on: ubuntu-24.04
+    # Token must allow package writes to ghcr.io when org defaults are restrictive.
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
+      # GHCR image paths must be lowercase; mixed-case owners break push.
+      - name: Image name for GHCR
+        id: image
+        shell: bash
+        run: |
+          owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          IMAGE="ghcr.io/${owner}/spacebot"
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+
       - name: Short SHA
         id: sha
+        shell: bash
         run: printf 'short_sha=%s\n' "${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
+      - name: Log in to GitHub Container Registry (ghcr.io)
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push to GHCR
+        id: docker_build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -41,5 +54,26 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:main
             ${{ env.IMAGE }}:sha-${{ steps.sha.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha,scope=build-linux-amd64
           cache-to: type=gha,mode=max,scope=build-linux-amd64
+
+      - name: Publish summary
+        shell: bash
+        env:
+          TAG_MAIN: ${{ env.IMAGE }}:main
+          TAG_SHA: ${{ env.IMAGE }}:sha-${{ steps.sha.outputs.short_sha }}
+          DIGEST: ${{ steps.docker_build.outputs.digest }}
+        run: |
+          cat >>"$GITHUB_STEP_SUMMARY" <<EOF
+          ### Published to GHCR (linux/amd64)
+
+          | Key | Value |
+          |-----|-------|
+          | Digest | \`${DIGEST:-"(see build log)"}\` |
+          | Pull (moving ref) | \`docker pull ${TAG_MAIN}\` |
+          | Pull (pinned ref) | \`docker pull ${TAG_SHA}\` |
+          EOF
