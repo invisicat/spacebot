@@ -169,7 +169,7 @@ Workers come loaded with tools for real work:
 
 ### Messaging
 
-Native adapters for Discord, Slack, Telegram, Twitch, Signal, Mattermost, Email, and Webchat, plus a generic Webhook receiver:
+Native adapters for Discord, Slack, Telegram, Twitch, Signal, Mattermost, Email, Photon iMessage, and Webchat, plus a generic Webhook receiver:
 
 - **Message coalescing** — rapid-fire messages are batched into a single LLM turn with timing context
 - **File attachments** — send and receive files, images, and documents. Attachments are saved to the workspace and recalled by ID
@@ -322,6 +322,7 @@ OAuth tokens are stored in `anthropic_oauth.json` and auto-refresh before each A
 | Slack           | **slack-morphism** — Socket Mode, events, Block Kit, slash commands                                             |
 | Telegram        | **teloxide** — long-poll, media attachments, group/DM support                                                   |
 | Twitch          | **twitch-irc** — chat integration with trigger prefix                                                           |
+| Photon iMessage | **spectrum-ts sidecar (Bun/TypeScript)** — full-duplex iMessage bridge                                         |
 | Browser         | **Chromiumoxide** — headless Chrome via CDP                                                                     |
 | CLI             | **Clap** — command line interface                                                                               |
 

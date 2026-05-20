@@ -1,6 +1,6 @@
 ---
 title: Messaging
-description: How Spacebot connects to Discord, Slack, Telegram, Twitch, Email, and webhooks.
+description: How Spacebot connects to Discord, Slack, Telegram, Twitch, Email, Photon iMessage, and webhooks.
 ---
 
 # Messaging
@@ -16,10 +16,10 @@ Spacebot connects to chat platforms so your agent can talk to people where they 
 | [Telegram](/docs/telegram-setup) | Supported | Bot token via BotFather |
 | [Twitch](/docs/twitch-setup) | Supported | OAuth token via Twitch IRC |
 | [Email](/docs/email-setup) | Supported | IMAP polling + SMTP replies |
+| Photon iMessage | Supported | Photon Spectrum credentials + bundled Bun sidecar |
 | Webhook | Supported | HTTP endpoint for programmatic access |
 | WhatsApp | Coming soon | Meta Cloud API |
 | Matrix | Coming soon | Decentralized chat protocol |
-| iMessage | Coming soon | macOS only |
 
 ## How It Works
 
@@ -43,7 +43,7 @@ Go to **Settings** → **Bindings** tab to create and manage bindings.
 
 Each binding specifies:
 - Which **agent** handles the messages
-- Which **platform** (Discord, Slack, Telegram, Twitch, Email)
+- Which **platform** (Discord, Slack, Telegram, Twitch, Email, Photon, ...)
 - Optionally which **adapter instance** on that platform
 - Optionally which **server/workspace/chat** to scope it to
 - Optionally which **channels** within that server
@@ -83,7 +83,7 @@ chat_id = "-100123456789"
 
 Without any filtering (no guild ID, workspace ID, or chat ID), a binding accepts messages from anywhere on that platform.
 
-Named adapters use `adapter = "<name>"` in bindings. Omit `adapter` to target the platform default adapter (`discord`, `slack`, `telegram`, `twitch`, `email`, `webhook`).
+Named adapters use `adapter = "<name>"` in bindings. Omit `adapter` to target the platform default adapter (`discord`, `slack`, `telegram`, `twitch`, `email`, `webhook`, `mattermost`, `signal`, `photon`).
 
 If no binding matches an incoming message, it's routed to the default agent automatically. This means the bot responds everywhere out of the box — add bindings to restrict it to specific channels or servers.
 
@@ -134,9 +134,14 @@ Each chat context maps to its own Spacebot conversation with isolated history:
 | Telegram | Each chat (group, DM, or channel) |
 | Twitch | Each channel |
 | Email | Each email thread |
+| Photon iMessage | Each Photon space |
 | Webhook | Each unique conversation ID in the request |
 
 Threads are first-class on Discord and Slack — a thread gets its own conversation, separate from the parent channel.
+
+### Photon iMessage (thread vs normal send)
+
+The Bun `packages/photon-bridge` sidecar sends outbound text **as a threaded reply only when Photon tags the triggering inbound as referencing the bot** (quotes your agent or satisfies your mention policy → `mentions_or_replies_to_bot`). It also threads when the outgoing payload is explicitly a **thread reply** from the framework. Plain responses to untagged traffic are sent **into the space as normal messages**, not anchored as inline replies under the triggering bubble.
 
 ## Streaming
 

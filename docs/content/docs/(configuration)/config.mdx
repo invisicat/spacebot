@@ -781,6 +781,30 @@ Channel/worker temporal context timezone precedence is:
 | `port` | integer | 18789 | HTTP listen port |
 | `bind` | string | `127.0.0.1` | Bind address |
 
+### `[messaging.photon]`
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | false | Enable Photon iMessage adapter |
+| `project_id` | string | None | Photon Spectrum project ID (or `env:VAR_NAME`) |
+| `project_secret` | string | None | Photon Spectrum project secret (or `env:VAR_NAME`) |
+| `sidecar_command` | string | None | Override command used to launch the bundled Bun sidecar |
+| `sidecar_working_dir` | string | None | Optional working directory for sidecar command |
+| `dm_allowed_users` | string[] | [] | Photon sender IDs allowed in DMs (empty blocks Photon DMs) |
+| `instances` | table[] | [] | Optional named Photon instances |
+
+### `[[messaging.photon.instances]]`
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `name` | string | **required** | Instance selector used by bindings (`adapter = "name"`) |
+| `enabled` | bool | true | Enable this named instance |
+| `project_id` | string | **required** | Photon Spectrum project ID (or `env:VAR_NAME`) |
+| `project_secret` | string | **required** | Photon Spectrum project secret (or `env:VAR_NAME`) |
+| `sidecar_command` | string | None | Override sidecar launch command for this instance |
+| `sidecar_working_dir` | string | None | Optional sidecar working directory for this instance |
+| `dm_allowed_users` | string[] | [] | Allowed DM sender IDs for this instance |
+
 ### `[[bindings]]`
 
 Routes platform conversations to agents. Checked in order; first match wins. Unmatched messages go to the default agent.
@@ -788,7 +812,7 @@ Routes platform conversations to agents. Checked in order; first match wins. Unm
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `agent_id` | string | **required** | Which agent handles matched messages |
-| `channel` | string | **required** | Platform name (`discord`, `slack`, `telegram`, `twitch`, `email`, `webhook`) |
+| `channel` | string | **required** | Platform name (`discord`, `slack`, `telegram`, `twitch`, `email`, `webhook`, `mattermost`, `signal`, `photon`) |
 | `adapter` | string | None | Optional named adapter selector (e.g. `ops` => `discord:ops`) |
 | `guild_id` | string | None | Discord guild filter |
 | `chat_id` | string | None | Telegram chat filter |
