@@ -15,6 +15,10 @@ interface/public/opencode-embed/
 # Desktop sidecar binaries (built by scripts/bundle-sidecar.sh)
 desktop/src-tauri/binaries/
 
+node_modules/
+
+# Photon sidecar local credentials (never commit)
+packages/photon-bridge/.env
 .idea
 list/
 agents/
