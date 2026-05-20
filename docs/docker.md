@@ -21,6 +21,7 @@ There is one published image: `ghcr.io/spacedriveapp/spacebot`.
 
 - `latest` tracks the rolling release
 - `vX.Y.Z` pins a specific release
+- `main` and `sha-<short>` — **linux/amd64** snapshot from a manually run workflow (for testing commits before a tagged release); see CI / Releases
 - Browser support is built in: Chromium is downloaded on first browser-tool use and cached under `/data`
 - Legacy `-slim` / `-full` tags are deprecated
 
@@ -193,7 +194,9 @@ If Spacebot is installed from source (`cargo install --path .` or a local releas
 
 ## CI / Releases
 
-Images are built and pushed to `ghcr.io/spacedriveapp/spacebot` via GitHub Actions (`.github/workflows/release.yml`).
+Images are built and pushed to `ghcr.io/spacedriveapp/spacebot` via GitHub Actions.
+
+### Versioned releases (`release.yml`)
 
 **Triggers:**
 
@@ -206,3 +209,14 @@ Images are built and pushed to `ghcr.io/spacedriveapp/spacebot` via GitHub Actio
 | -------- | ----------------- |
 | `v0.1.0` | Versioned release |
 | `latest` | Rolling release   |
+
+### `main` branch snapshots (`docker-amd64.yml`)
+
+**Triggers:** Manual only — in GitHub Actions, run workflow **Docker linux/amd64** (you can choose the branch/ref to build).
+
+**Architecture:** linux/amd64 only (no arm64 variant for these tags).
+
+| Tag          | Description                                    |
+| ------------ | ---------------------------------------------- |
+| `main`       | Image built from the latest commit on `main` |
+| `sha-<short>` | Same image tagged with the abbreviated Git SHA |
