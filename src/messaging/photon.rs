@@ -297,7 +297,23 @@ impl PhotonAdapter {
             })
             .collect::<Vec<_>>();
 
-        let content = if attachments.is_empty() {
+        let content = if let Some(emoji) = payload
+            .reaction_emoji
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+        {
+            MessageContent::Reaction {
+                emoji,
+                target_message_id: payload
+                    .reaction_target_message_id
+                    .as_ref()
+                    .map(|value| value.trim())
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned),
+            }
+        } else if attachments.is_empty() {
             MessageContent::Text(payload.text)
         } else {
             MessageContent::Media {
@@ -601,7 +617,7 @@ impl Messaging for PhotonAdapter {
                                             if let Some(message) = PhotonAdapter::convert_inbound(
                                                 runtime_key.as_str(),
                                                 &dm_allow_list,
-                                                payload,
+                                                *payload,
                                             )
                                             .await
                                                 && inbound_tx.send(message).await.is_err()
@@ -943,7 +959,7 @@ enum SidecarEvent {
         adapter_key: Option<String>,
     },
     Inbound {
-        payload: SidecarInboundPayload,
+        payload: Box<SidecarInboundPayload>,
     },
     Response {
         id: String,
@@ -977,6 +993,10 @@ struct SidecarInboundPayload {
     server_name: Option<String>,
     #[serde(default)]
     attachments: Vec<SidecarInboundAttachment>,
+    #[serde(default)]
+    reaction_emoji: Option<String>,
+    #[serde(default)]
+    reaction_target_message_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1015,6 +1035,8 @@ mod tests {
             space_name: Some("Support".to_string()),
             server_name: Some("iMessage".to_string()),
             attachments: Vec::new(),
+            reaction_emoji: None,
+            reaction_target_message_id: None,
         };
 
         let inbound = PhotonAdapter::convert_inbound("photon:support", &HashSet::new(), payload)
@@ -1060,6 +1082,8 @@ mod tests {
                 data_base64: Some("aGVsbG8=".to_string()),
                 size_bytes: Some(5),
             }],
+            reaction_emoji: None,
+            reaction_target_message_id: None,
         };
 
         let inbound = PhotonAdapter::convert_inbound("photon", &HashSet::new(), payload)
@@ -1093,6 +1117,53 @@ mod tests {
                 assert!(att.url.is_none());
                 assert_eq!(att.data_base64.as_deref(), Some("YQo="));
                 assert_eq!(att.size_bytes, Some(461663));
+            }
+            other => panic!("expected Inbound, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn convert_inbound_reaction_maps_to_reaction_content() {
+        let payload = SidecarInboundPayload {
+            space_id: "space-123".to_string(),
+            message_id: "msg-456".to_string(),
+            sender_id: "sender-1".to_string(),
+            sender_display_name: Some("Alice".to_string()),
+            text: String::new(),
+            timestamp: None,
+            mentions_or_replies_to_bot: true,
+            is_dm: false,
+            space_name: None,
+            server_name: None,
+            attachments: Vec::new(),
+            reaction_emoji: Some("❤️".to_string()),
+            reaction_target_message_id: Some("target-123".to_string()),
+        };
+
+        let inbound = PhotonAdapter::convert_inbound("photon", &HashSet::new(), payload)
+            .await
+            .expect("inbound should parse");
+
+        match inbound.content {
+            MessageContent::Reaction {
+                emoji,
+                target_message_id,
+            } => {
+                assert_eq!(emoji, "❤️");
+                assert_eq!(target_message_id.as_deref(), Some("target-123"));
+            }
+            other => panic!("expected Reaction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deserializes_sidecar_payload_reaction_fields() {
+        let line = r#"{"type":"inbound","payload":{"space_id":"s1","message_id":"m1","sender_id":"u1","text":"","mentions_or_replies_to_bot":true,"is_dm":false,"attachments":[],"reaction_emoji":"👍","reaction_target_message_id":"msg-1"}}"#;
+        let event: SidecarEvent = serde_json::from_str(line).expect("sidecar JSON should parse");
+        match event {
+            SidecarEvent::Inbound { payload } => {
+                assert_eq!(payload.reaction_emoji.as_deref(), Some("👍"));
+                assert_eq!(payload.reaction_target_message_id.as_deref(), Some("msg-1"));
             }
             other => panic!("expected Inbound, got {other:?}"),
         }

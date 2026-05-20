@@ -1482,6 +1482,7 @@ impl Channel {
             crate::MessageContent::Media { text, .. } => text
                 .as_deref()
                 .is_some_and(|value| value.trim_start().starts_with('/')),
+            crate::MessageContent::Reaction { .. } => false,
             crate::MessageContent::Interaction { .. } => false,
         };
         if looks_like_command {
@@ -1684,6 +1685,13 @@ impl Channel {
                     crate::MessageContent::Media { text, attachments } => {
                         (text.clone().unwrap_or_default(), attachments.clone())
                     }
+                    crate::MessageContent::Reaction {
+                        emoji,
+                        target_message_id,
+                    } => (
+                        format_reaction_text(emoji.as_str(), target_message_id.as_deref()),
+                        Vec::new(),
+                    ),
                     // Render interactions as their Display form so the LLM sees plain text.
                     crate::MessageContent::Interaction { .. } => {
                         (message.content.to_string(), Vec::new())
@@ -2073,6 +2081,13 @@ impl Channel {
             crate::MessageContent::Media { text, attachments } => {
                 (text.clone().unwrap_or_default(), attachments.clone())
             }
+            crate::MessageContent::Reaction {
+                emoji,
+                target_message_id,
+            } => (
+                format_reaction_text(emoji.as_str(), target_message_id.as_deref()),
+                Vec::new(),
+            ),
             // Render interactions as their Display form so the LLM sees plain text.
             crate::MessageContent::Interaction { .. } => (message.content.to_string(), Vec::new()),
         };
@@ -3838,6 +3853,22 @@ impl Channel {
                 );
             }
         });
+    }
+}
+
+fn format_reaction_text(emoji: &str, target_message_id: Option<&str>) -> String {
+    let emoji = emoji.trim();
+    if emoji.is_empty() {
+        return "[reaction]".to_string();
+    }
+
+    if let Some(target_message_id) = target_message_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        format!("reacted with {} to message {}", emoji, target_message_id)
+    } else {
+        format!("reacted with {}", emoji)
     }
 }
 

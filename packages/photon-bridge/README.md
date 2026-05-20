@@ -27,6 +27,9 @@ using newline-delimited JSON commands/events.
   - `response` for command acks/errors
   - `log` for structured sidecar logs
 
+`remove_reaction` is currently a provider-level no-op for Photon iMessage
+because `spectrum-ts` does not expose a tapback-removal API.
+
 ## Environment variables
 
 - `PHOTON_PROJECT_ID` (required)

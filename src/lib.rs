@@ -589,6 +589,12 @@ pub enum MessageContent {
         text: Option<String>,
         attachments: Vec<Attachment>,
     },
+    /// A message-level reaction (tapback/emoji) to an existing message.
+    Reaction {
+        emoji: String,
+        /// Platform message id that was reacted to, when provided by adapter.
+        target_message_id: Option<String>,
+    },
     /// A platform interactive component was actioned (button click, select menu, etc.).
     ///
     /// Produced by Slack and Discord adapters. The agent can correlate the interaction
@@ -617,6 +623,19 @@ impl std::fmt::Display for MessageContent {
                     write!(f, "{}", t)
                 } else {
                     write!(f, "[media]")
+                }
+            }
+            MessageContent::Reaction {
+                emoji,
+                target_message_id,
+            } => {
+                if let Some(target_message_id) = target_message_id
+                    .as_deref()
+                    .filter(|value| !value.is_empty())
+                {
+                    write!(f, "[reaction: {} → {}]", emoji, target_message_id)
+                } else {
+                    write!(f, "[reaction: {}]", emoji)
                 }
             }
             MessageContent::Interaction {

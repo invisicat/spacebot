@@ -72,11 +72,20 @@ interface SidecarInboundPayload {
 	space_name?: string;
 	server_name?: string;
 	attachments: SidecarInboundAttachment[];
+	reaction_emoji?: string;
+	reaction_target_message_id?: string;
 }
 
 interface SidecarInbound {
 	type: "inbound";
 	payload: SidecarInboundPayload;
+}
+
+interface SidecarInboundReaction {
+	emoji: string;
+	target_message_id?: string;
+	/** True when the reaction target appears to be a bot-authored message. */
+	targets_bot: boolean;
 }
 
 const adapterKey = process.env.PHOTON_ADAPTER_KEY ?? "photon";
@@ -352,6 +361,72 @@ async function collectAttachmentsFromMessage(
 	return collectAttachmentsFromContent(message);
 }
 
+function extractReactionFromContent(content: any): SidecarInboundReaction | null {
+	if (!content || typeof content !== "object") {
+		return null;
+	}
+
+	const type = content.type;
+	if (type === "group" && Array.isArray(content.items)) {
+		for (const item of content.items) {
+			const reaction = extractReactionFromMessage(item);
+			if (reaction) {
+				return reaction;
+			}
+		}
+		return null;
+	}
+
+	if (type === "reply" && content.content) {
+		return extractReactionFromContent(content.content);
+	}
+
+	if (type === "effect" && content.content) {
+		return extractReactionFromContent(content.content);
+	}
+
+	if (type !== "reaction") {
+		return null;
+	}
+
+	const emoji = getString(content.emoji);
+	if (!emoji) {
+		return null;
+	}
+
+	const target = content.target;
+	const targetDirection = getString(target?.direction)?.toLowerCase();
+	const targetSenderId =
+		getString(target?.sender?.id) ??
+		getString(target?.sender_id) ??
+		getString(target?.senderId);
+	const targetSenderIsBot =
+		getBoolean(target?.sender?.isBot) || getBoolean(target?.sender?.is_bot);
+
+	return {
+		emoji,
+		target_message_id:
+			getString(target?.id) ??
+			getString(target?.messageId) ??
+			getString(target?.message_id),
+		// Spectrum often marks bot-authored messages as outbound. For providers
+		// that don't expose sender metadata on target, treat missing sender id as
+		// bot-targeted so `require_mention` still allows tapbacks in group chats.
+		targets_bot:
+			targetDirection === "outbound" || targetSenderIsBot || !targetSenderId,
+	};
+}
+
+function extractReactionFromMessage(message: any): SidecarInboundReaction | null {
+	if (!message) {
+		return null;
+	}
+	if (typeof message === "object" && message.content) {
+		return extractReactionFromContent(message.content);
+	}
+	return extractReactionFromContent(message);
+}
+
 async function extractInboundPayload(
 	message: any,
 ): Promise<SidecarInboundPayload | null> {
@@ -372,6 +447,7 @@ async function extractInboundPayload(
 		message?.attachments ?? message?.files ?? message?.media,
 	);
 	const spectrumAttachments = await collectAttachmentsFromMessage(message);
+	const reaction = extractReactionFromMessage(message);
 
 	const payload: SidecarInboundPayload = {
 		space_id: spaceId,
@@ -392,7 +468,8 @@ async function extractInboundPayload(
 		mentions_or_replies_to_bot:
 			getBoolean(message?.mentionsOrRepliesToBot) ||
 			getBoolean(message?.mentions_or_replies_to_bot) ||
-			getBoolean(message?.mentionedAgent),
+			getBoolean(message?.mentionedAgent) ||
+			reaction?.targets_bot === true,
 		is_dm:
 			getBoolean(message?.isDm) ||
 			getBoolean(message?.is_dm) ||
@@ -406,6 +483,8 @@ async function extractInboundPayload(
 			getString(message?.serverName) ??
 			getString(message?.server_name),
 		attachments: [...spectrumAttachments, ...legacyAttachments],
+		reaction_emoji: reaction?.emoji,
+		reaction_target_message_id: reaction?.target_message_id,
 	};
 
 	const cachedSpace =
@@ -501,8 +580,8 @@ async function addReaction(space: any, messageId: string, emoji: string, remove 
 	}
 	if (remove) {
 		writeLog(
-			"warn",
-			"Photon / spectrum-ts: remove_reaction is not implemented in the sidecar (tapback removal needs provider support).",
+			"debug",
+			"Photon / spectrum-ts: remove_reaction is not implemented by the provider; no-op.",
 		);
 		return;
 	}
