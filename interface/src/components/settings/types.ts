@@ -22,7 +22,8 @@ export type Platform =
 	| "email"
 	| "webhook"
 	| "mattermost"
-	| "signal";
+	| "signal"
+	| "photon";
 
 export interface GlobalSettingsSectionProps {
 	settings: GlobalSettingsResponse | undefined;

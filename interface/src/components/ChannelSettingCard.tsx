@@ -40,7 +40,8 @@ type Platform =
 	| "email"
 	| "webhook"
 	| "mattermost"
-	| "signal";
+	| "signal"
+	| "photon";
 
 const PLATFORM_LABELS: Record<Platform, string> = {
 	discord: "Discord",
@@ -51,6 +52,7 @@ const PLATFORM_LABELS: Record<Platform, string> = {
 	webhook: "Webhook",
 	mattermost: "Mattermost",
 	signal: "Signal",
+	photon: "Photon iMessage",
 };
 
 const DOC_LINKS: Partial<Record<Platform, string>> = {
@@ -60,6 +62,7 @@ const DOC_LINKS: Partial<Record<Platform, string>> = {
 	twitch: "https://docs.spacebot.sh/twitch-setup",
 	mattermost: "https://docs.spacebot.sh/mattermost-setup",
 	signal: "https://docs.spacebot.sh/signal-setup",
+	photon: "https://docs.photon.codes/spectrum-ts/getting-started",
 };
 
 // --- Platform Catalog (Left Column) ---
@@ -78,12 +81,12 @@ export function PlatformCatalog({onAddInstance}: PlatformCatalogProps) {
 		"webhook",
 		"mattermost",
 		"signal",
+		"photon",
 	];
 
 	const COMING_SOON = [
 		{platform: "whatsapp", name: "WhatsApp"},
 		{platform: "matrix", name: "Matrix"},
-		{platform: "imessage", name: "iMessage"},
 		{platform: "irc", name: "IRC"},
 		{platform: "lark", name: "Lark"},
 		{platform: "dingtalk", name: "DingTalk"},
@@ -811,6 +814,34 @@ export function AddInstanceCard({
 					credentials.signal_dm_allowed_users = result.entries.join(",");
 				}
 			}
+		} else if (platform === "photon") {
+			if (!credentialInputs.photon_project_id?.trim()) {
+				setMessage({text: "Project ID is required", type: "error"});
+				return;
+			}
+			if (!credentialInputs.photon_project_secret?.trim()) {
+				setMessage({text: "Project Secret is required", type: "error"});
+				return;
+			}
+			credentials.photon_project_id = credentialInputs.photon_project_id.trim();
+			credentials.photon_project_secret =
+				credentialInputs.photon_project_secret.trim();
+			if (credentialInputs.photon_sidecar_command?.trim()) {
+				credentials.photon_sidecar_command =
+					credentialInputs.photon_sidecar_command.trim();
+			}
+			if (credentialInputs.photon_sidecar_working_dir?.trim()) {
+				credentials.photon_sidecar_working_dir =
+					credentialInputs.photon_sidecar_working_dir.trim();
+			}
+			if (credentialInputs.photon_dm_allowed_users?.trim()) {
+				credentials.photon_dm_allowed_users =
+					credentialInputs.photon_dm_allowed_users
+						.split(",")
+						.map((entry) => entry.trim())
+						.filter((entry) => entry.length > 0)
+						.join(",");
+			}
 		}
 
 		if (!isDefault && !instanceName.trim()) {
@@ -1374,6 +1405,97 @@ export function AddInstanceCard({
 								uuid:xxx identifiers. Comma-separated. If empty, DMs are
 								blocked.
 							</p>
+						</div>
+					</>
+				)}
+
+				{platform === "photon" && (
+					<>
+						<div>
+							<label className="mb-1.5 block text-sm font-medium text-ink-dull">
+								Project ID
+							</label>
+							<Input
+								size="lg"
+								value={credentialInputs.photon_project_id ?? ""}
+								onChange={(e) =>
+									setCredentialInputs({
+										...credentialInputs,
+										photon_project_id: e.target.value,
+									})
+								}
+								placeholder="proj_xxx"
+							/>
+						</div>
+						<div>
+							<label className="mb-1.5 block text-sm font-medium text-ink-dull">
+								Project Secret
+							</label>
+							<Input
+								type="password"
+								size="lg"
+								value={credentialInputs.photon_project_secret ?? ""}
+								onChange={(e) =>
+									setCredentialInputs({
+										...credentialInputs,
+										photon_project_secret: e.target.value,
+									})
+								}
+								placeholder="sec_xxx"
+							/>
+						</div>
+						<div className="grid grid-cols-2 gap-3">
+							<div>
+								<label className="mb-1.5 block text-sm font-medium text-ink-dull">
+									Sidecar Command (Optional)
+								</label>
+								<Input
+									size="lg"
+									value={credentialInputs.photon_sidecar_command ?? ""}
+									onChange={(e) =>
+										setCredentialInputs({
+											...credentialInputs,
+											photon_sidecar_command: e.target.value,
+										})
+									}
+									placeholder="bun run start"
+								/>
+							</div>
+							<div>
+								<label className="mb-1.5 block text-sm font-medium text-ink-dull">
+									Working Dir (Optional)
+								</label>
+								<Input
+									size="lg"
+									value={credentialInputs.photon_sidecar_working_dir ?? ""}
+									onChange={(e) =>
+										setCredentialInputs({
+											...credentialInputs,
+											photon_sidecar_working_dir: e.target.value,
+										})
+									}
+									placeholder="./packages/photon-bridge"
+								/>
+							</div>
+						</div>
+						<div>
+							<label className="mb-1.5 block text-sm font-medium text-ink-dull">
+								DM Allowed Users (Optional)
+							</label>
+							<Input
+								size="lg"
+								value={credentialInputs.photon_dm_allowed_users ?? ""}
+								onChange={(e) =>
+									setCredentialInputs({
+										...credentialInputs,
+										photon_dm_allowed_users: e.target.value,
+									})
+								}
+								placeholder="alice@icloud.com, +15555550123"
+								onKeyDown={(e) => {
+									if (e.key === "Enter") handleSave();
+								}}
+							/>
 						</div>
 					</>
 				)}

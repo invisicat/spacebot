@@ -31,7 +31,8 @@ type Platform =
 	| "email"
 	| "webhook"
 	| "mattermost"
-	| "signal";
+	| "signal"
+	| "photon";
 
 interface ChannelEditModalProps {
 	platform: Platform;

@@ -3267,6 +3267,11 @@ export interface components {
             email_smtp_username?: string | null;
             mattermost_base_url?: string | null;
             mattermost_token?: string | null;
+            photon_dm_allowed_users?: string | null;
+            photon_project_id?: string | null;
+            photon_project_secret?: string | null;
+            photon_sidecar_command?: string | null;
+            photon_sidecar_working_dir?: string | null;
             signal_account?: string | null;
             signal_dm_allowed_users?: string | null;
             signal_http_url?: string | null;
@@ -3387,6 +3392,7 @@ export interface components {
             email: components["schemas"]["PlatformStatus"];
             instances: components["schemas"]["AdapterInstanceStatus"][];
             mattermost: components["schemas"]["PlatformStatus"];
+            photon: components["schemas"]["PlatformStatus"];
             signal: components["schemas"]["PlatformStatus"];
             slack: components["schemas"]["PlatformStatus"];
             telegram: components["schemas"]["PlatformStatus"];
