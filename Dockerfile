@@ -47,6 +47,10 @@ RUN ./scripts/build-opencode-embed.sh
 COPY interface/ interface/
 RUN cd interface && bun run build
 
+# 4b. Install Photon sidecar deps (Docker runtime uses `bun` + this tree; see PhotonAdapter defaults).
+COPY packages/photon-bridge/ packages/photon-bridge/
+RUN cd packages/photon-bridge && bun install --frozen-lockfile
+
 # 5. Copy source and compile the real binary.
 #    build.rs is skipped (SPACEBOT_SKIP_FRONTEND_BUILD=1) since the
 #    frontend is already built above with the OpenCode embed included.
@@ -102,8 +106,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/bin/spacebot /usr/local/bin/spacebot
+# Bun runtime for `packages/photon-bridge` when `[messaging.photon]` is enabled (PhotonAdapter defaults).
+COPY --from=builder /root/.bun/bin/bun /usr/local/bin/bun
+COPY --from=builder /build/packages/photon-bridge /opt/spacebot/packages/photon-bridge
+
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Photon adapter uses cwd `packages/photon-bridge` relative to process cwd.
+WORKDIR /opt/spacebot
 
 ENV SPACEBOT_DIR=/data
 ENV SPACEBOT_DEPLOYMENT=docker

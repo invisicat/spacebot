@@ -29,6 +29,7 @@ There is one published image: `ghcr.io/spacedriveapp/spacebot`.
 - `main` and `sha-<short>` — **linux/amd64** snapshot from a manually run workflow (for testing commits before a tagged release); see CI / Releases
 - Browser support is built in: Chromium is downloaded on first browser-tool use and cached under `/data`
 - Legacy `-slim` / `-full` tags are deprecated
+- **Photon iMessage**: The image ships Bun plus `packages/photon-bridge` under `/opt/spacebot` (container `WORKDIR`). If Photon is enabled and you still see `failed to spawn photon sidecar process` / `No such file or directory`, rebuild or upgrade the image—or disable Photon in **Settings → Channels** until you do. Photon on Linux containers is uncommon; confirm Spectrum supports your host before relying on it.
 
 ## Data Volume
 
